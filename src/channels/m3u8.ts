@@ -228,7 +228,7 @@ function groupRank(group: string): [number, number, number] {
  * Formats standard #EXTINF attributes for media players like VLC, TiviMate, etc.
  *
  * @param channels Array of channels
- * @param origin Host origin (e.g., http://localhost:3000)
+ * @param origin Public origin clients reach us at (e.g., https://dlhd.example.com)
  * @param server Optional player server (defaults to 'stream')
  * @returns M3U playlist formatted string
  */

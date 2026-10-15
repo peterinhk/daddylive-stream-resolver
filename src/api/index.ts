@@ -1,8 +1,9 @@
-import { createServer, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { PUBLIC_URL } from "../config.js";
 import { PLAYER_IDS, type ServerKind } from "../servers/kinds.js";
 import { proxyStream } from "../proxy/stream.js";
 import { renderPage } from "../web/page.js";
@@ -21,6 +22,14 @@ const staticFiles: Record<string, [string, string]> = {
   "/app.js": ["app.js", "application/javascript; charset=utf-8"],
 };
 
+const CORS = { "Access-Control-Allow-Origin": "*" };
+const PREFLIGHT = {
+  ...CORS,
+  "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+  "Access-Control-Allow-Headers": "*, Range",
+  "Access-Control-Max-Age": "86400",
+};
+
 function send(
   res: ServerResponse,
   status: number,
@@ -29,19 +38,45 @@ function send(
   extra?: Record<string, string>,
 ) {
   const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
-  res.writeHead(status, { "Content-Type": contentType, "Content-Length": buf.byteLength, ...extra });
+  res.writeHead(status, {
+    "Content-Type": contentType,
+    "Content-Length": buf.byteLength,
+    ...CORS,
+    ...extra,
+  });
   res.end(buf);
 }
 
-createServer(async (req, res) => {
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw?.split(",")[0]?.trim() || undefined;
+}
+
+// Origin clients use to reach us. Behind a TLS-terminating proxy the socket is plain
+// HTTP, so absolute links (playlists, live URLs) must follow X-Forwarded-* or PUBLIC_URL.
+function publicOrigin(req: IncomingMessage): string {
+  if (PUBLIC_URL) return PUBLIC_URL;
+  const proto = firstHeader(req.headers["x-forwarded-proto"]) ?? "http";
+  const host = firstHeader(req.headers["x-forwarded-host"]) ?? req.headers.host ?? "localhost";
+  return `${proto}://${host}`;
+}
+
+const server = createServer(async (req, res) => {
   try {
-    if (req.method !== "GET") {
-      send(res, 405, "method not allowed", "text/plain");
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, PREFLIGHT);
+      res.end();
       return;
     }
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    // HEAD shares the GET path; node's http server drops the body for HEAD responses.
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      send(res, 405, "method not allowed", "text/plain", { Allow: "GET, HEAD, OPTIONS" });
+      return;
+    }
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const origin = publicOrigin(req);
     if (url.pathname === "/api/proxy") {
-      const result = await proxyStream(url.searchParams, url.origin);
+      const result = await proxyStream(url.searchParams, origin);
       send(res, result.status, result.body, result.type, result.headers);
       return;
     }
@@ -63,7 +98,7 @@ createServer(async (req, res) => {
         res,
         channelId,
         serverParam as ServerKind,
-        url.origin,
+        origin,
         url.searchParams.get("u"),
         Number.isFinite(variant as number) ? (variant as number) : null,
       );
@@ -80,7 +115,7 @@ createServer(async (req, res) => {
         send(res, 400, "server required", "text/plain");
         return;
       }
-      await handleResolveOne(res, channelId, serverParam as ServerKind, url.origin);
+      await handleResolveOne(res, channelId, serverParam as ServerKind, origin);
       return;
     }
     if (url.pathname === "/api/channels") {
@@ -104,7 +139,7 @@ createServer(async (req, res) => {
         ? (serverParam as ServerKind)
         : undefined;
       const channels = await fetchChannelList();
-      const m3u8 = generateM3u8Playlist(channels, url.origin, server);
+      const m3u8 = generateM3u8Playlist(channels, origin, server);
       send(
         res,
         200,
@@ -133,7 +168,7 @@ createServer(async (req, res) => {
         res,
         channelId,
         serverParam as ServerKind,
-        url.origin,
+        origin,
         url.searchParams.get("u"),
         Number.isFinite(variant as number) ? (variant as number) : null,
       );
@@ -153,6 +188,16 @@ createServer(async (req, res) => {
     const message = err instanceof Error ? err.message : "error";
     send(res, 500, message, "text/plain");
   }
-}).listen(PORT, () => {
+});
+
+server.listen(PORT, () => {
   process.stdout.write(`listening on http://localhost:${PORT}\n`);
 });
+
+// Exit promptly on `docker stop` instead of waiting for SIGKILL.
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => {
+    server.close(() => process.exit(0));
+    server.closeAllConnections();
+  });
+}

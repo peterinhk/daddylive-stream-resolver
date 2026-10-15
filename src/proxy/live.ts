@@ -1,4 +1,5 @@
 import type { ServerKind } from "../servers/kinds.js";
+import { MEDIA_TIMEOUT_MS } from "../config.js";
 import { UA } from "../http.js";
 import { buildProxyUrl } from "./links.js";
 import { upstreamRuleFor } from "./rules.js";
@@ -101,6 +102,7 @@ async function fetchUpstream(
   const res = await fetch(target, {
     headers: upstreamHeaders(session, target),
     redirect: "follow",
+    signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS),
   });
   return {
     status: res.status,

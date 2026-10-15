@@ -1,3 +1,4 @@
+import { MEDIA_TIMEOUT_MS } from "../config.js";
 import { UA } from "../http.js";
 import { buildProxyUrl } from "./links.js";
 import { upstreamRuleFor } from "./rules.js";
@@ -65,6 +66,7 @@ async function fetchRaw(target: string, referer: string): Promise<{ status: numb
   const res = await fetch(target, {
     headers: buildUpstreamHeaders(target, referer),
     redirect: "follow",
+    signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS),
   });
   return {
     status: res.status,

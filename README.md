@@ -82,7 +82,7 @@ What the image does:
 
 - **Build stage** — `npm ci` + `npm run build` on `node:22-alpine`, with the npm cache mounted.
 - **Runtime stage** — only `dist/` and `package.json` (zero runtime deps means no `node_modules` ship); runs as the non-root `node` user with a `HEALTHCHECK` polling `/`.
-- **Configuration** — `PORT` (default `3000`) and `DLHD_BASE` pass through as environment variables; see [Configuration](#%EF%B8%8F-configuration).
+- **Configuration** — `PORT` (default `3000`), `PUBLIC_URL` and `DLHD_BASE` pass through as environment variables; see [Configuration](#%EF%B8%8F-configuration).
 - **`restart: unless-stopped`** — the container comes back after reboots and crashes.
 
 The container bypasses the `lsof`/`kill` port-clearing in `npm start` (a host dev convenience) and runs `node dist/api/index.js` directly. Logs: `docker logs -f daddylive`.
@@ -364,6 +364,13 @@ type ResolvedStream = {
 | --- | --- | --- |
 | `PORT` | `3000` | HTTP listen port |
 | `DLHD_BASE` | `https://dlive.sx` | Origin for watch and player page URLs |
+| `PUBLIC_URL` | — | Public base URL (e.g. `https://dlhd.example.com`) used in generated live, proxy and playlist links |
+
+### Behind a reverse proxy
+
+Live URLs, rewritten HLS playlists and the IPTV playlist contain absolute links back to this server. Behind a TLS-terminating proxy (Caddy, Traefik, nginx) the app only sees plain HTTP, so it builds those links from `PUBLIC_URL` when set, otherwise from `X-Forwarded-Proto` / `X-Forwarded-Host` (falling back to `Host`). Without one of these, an `https://` page gets `http://` stream links and browsers block playback as mixed content. Set `PUBLIC_URL` when the proxy doesn't forward those headers.
+
+All responses send `Access-Control-Allow-Origin: *`, and `OPTIONS` preflight and `HEAD` requests are answered, so external web players and IPTV apps can use the endpoints cross-origin.
 
 > [!NOTE]
 > No runtime packages are required — TypeScript and `@types/node` are devDependencies only.
@@ -378,7 +385,7 @@ src/
   proxy/        playlist rewrite, live session, links, WebP→TS unwrap
   servers/      six player profiles (referer / tools behavior)
   web/          HTML shell, CSS, browser app (hls.js)
-  config.ts     DLHD_BASE
+  config.ts     DLHD_BASE, PUBLIC_URL, upstream timeouts
   http.ts       shared User-Agent and HTML fetch
   index.ts      public library exports
 ```

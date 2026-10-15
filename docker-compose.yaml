@@ -3,9 +3,22 @@ services:
     build: .
     image: daddylive-stream-resolver
     container_name: daddylive
-    ports:
-      - "3000:3000"
+    init: true
+#    ports:
+#      - "3003:3000"
+    labels:
+      caddy: dlhd.home.int
+      caddy.reverse_proxy: "{{upstreams 3000}}"
+      caddy.import: https-proxy
     environment:
       PORT: "3000"
+      # Public URL clients use; makes generated stream/playlist links https behind Caddy
+      PUBLIC_URL: "https://dlhd.home.int"
       # DLHD_BASE: "https://dlive.sx"  # upstream base, override if it moves again
     restart: unless-stopped
+    networks:
+      - caddy
+networks:
+  caddy:
+    name: caddy
+    external: true
