@@ -13,7 +13,7 @@ services:
     environment:
       PORT: "3000"
       # Public URL clients use; makes generated stream/playlist links https behind Caddy
-      PUBLIC_URL: "https://dlhd.home.int"
+      PUBLIC_URL: "https://live.pmajtech.uk"
       # DLHD_BASE: "https://dlive.sx"  # upstream base, override if it moves again
     restart: unless-stopped
     networks:

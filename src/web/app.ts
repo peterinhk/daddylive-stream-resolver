@@ -281,6 +281,18 @@ const stopPlayback = () => {
   ui.video.load();
 };
 
+// The server only knows the Host it was reached by, which a tunnel or proxy may rewrite
+// (e.g. public dlhd.example.com → internal dlhd.home.int). Re-point our own links at the
+// origin this page was actually loaded from so they work for whoever is viewing it.
+const localizeOrigin = (entry: ServerExport): ServerExport => {
+  if (!entry.live || !URL.canParse(entry.live)) return entry;
+  const from = new URL(entry.live).origin;
+  const to = window.location.origin;
+  if (from === to) return entry;
+  const swap = (value: string) => value.split(from).join(to);
+  return { ...entry, live: swap(entry.live), vlc: swap(entry.vlc), mpv: swap(entry.mpv) };
+};
+
 const playUrl = (entry: ServerExport) =>
   entry.isHls ? entry.live || entry.direct : entry.direct;
 
@@ -440,7 +452,8 @@ const selectServer = async (server: ServerKind) => {
 
   try {
     const res = await fetch(`/api/resolve?channel=${channelId}&server=${server}`);
-    const data = (await res.json()) as ServerExport & { error?: string; resolveMs?: number };
+    const raw = (await res.json()) as ServerExport & { error?: string; resolveMs?: number };
+    const data = { ...raw, ...localizeOrigin(raw) };
     if (!live()) return;
     const resolveMs = stopClock("resolve");
     if (!res.ok || data.error || !data.direct) {

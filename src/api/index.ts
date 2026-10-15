@@ -61,6 +61,11 @@ function publicOrigin(req: IncomingMessage): string {
   return `${proto}://${host}`;
 }
 
+// Rewritten HLS playlists use root-relative links ("/api/proxy?..."). Players resolve them
+// against the URL they fetched the playlist from, so playback works through any hostname
+// (LAN, tunnel, proxy) without knowing it — unlike absolute links built from Host.
+const PLAYLIST_BASE = "";
+
 const server = createServer(async (req, res) => {
   try {
     if (req.method === "OPTIONS") {
@@ -76,7 +81,7 @@ const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const origin = publicOrigin(req);
     if (url.pathname === "/api/proxy") {
-      const result = await proxyStream(url.searchParams, origin);
+      const result = await proxyStream(url.searchParams, PLAYLIST_BASE);
       send(res, result.status, result.body, result.type, result.headers);
       return;
     }
@@ -98,7 +103,7 @@ const server = createServer(async (req, res) => {
         res,
         channelId,
         serverParam as ServerKind,
-        origin,
+        PLAYLIST_BASE,
         url.searchParams.get("u"),
         Number.isFinite(variant as number) ? (variant as number) : null,
       );
@@ -168,7 +173,7 @@ const server = createServer(async (req, res) => {
         res,
         channelId,
         serverParam as ServerKind,
-        origin,
+        PLAYLIST_BASE,
         url.searchParams.get("u"),
         Number.isFinite(variant as number) ? (variant as number) : null,
       );
